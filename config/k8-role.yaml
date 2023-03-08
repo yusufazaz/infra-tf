@@ -1,0 +1,64 @@
+# role.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: eks-dev-role
+rules:
+  - apiGroups: [""]
+    resources: ["services", "endpoints", "pods", "deployments", "ingress"]
+    verbs: ["get", "list", "watch", "create", "delete", "update"]
+  - apiGroups:
+    - authorization.k8s.io
+    resources:
+    - selfsubjectaccessreviews
+    - selfsubjectrulesreviews
+    verbs:
+    - watch
+    - get
+    - list
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: eks-ro-role
+rules:
+  - apiGroups: [""]
+    resources: ["services", "endpoints", "pods", "deployments", "ingress"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups:
+    - authorization.k8s.io
+    resources:
+    - selfsubjectaccessreviews
+    - selfsubjectrulesreviews
+    verbs:
+    - watch
+    - get
+    - list
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: eks-dev-role_cluster_role_binding
+subjects:
+- kind: Group
+  name: eks-dev-role
+  apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: eks-ro-role
+  apiGroup: rbac.authorization.k8s.io
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: eks-ro_cluster_role_binding
+subjects:
+- kind: Group
+  name: eks-ro-role
+  apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: eks-ro-role
+  apiGroup: rbac.authorization.k8s.io

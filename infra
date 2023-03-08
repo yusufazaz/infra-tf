@@ -1,0 +1,171 @@
+#!/usr/bin/env bash
+
+source ./bin/shell-logger
+
+usage()
+{
+   echo ""
+   echo "Usage: infra  <command> <options>"
+   echo "\t--help"
+   echo "\tcreate|destroy"
+  
+   echo "\t--environment dev|qa|prod|int"
+   echo "\t--stack-prefix "
+   echo "\t--tf-stack    platform "
+   echo "\texample:"
+   echo "\t./infra create --tf-stack vpc  --environment dev"
+   echo "\t./infra destroy --tf-stack vpc  --environment dev"
+   exit 1  
+}
+
+START_TIME=$(date +%s)
+
+while [[ $# -gt 0 ]] ; do
+
+  key="${1:-}"
+  val="${2:-}"
+
+  case $key in
+    --help)
+       usage
+      ;;
+    --tf-stack)
+      export TF_STACK="${val}"
+      shift
+      ;;
+    --environment)
+      export ENVIRONMENT="${val}"
+      shift
+      ;;
+    *)
+      # Take the first argument that is not an option and put it into CMD.  Take
+      # the second argument and put it into SUBCMD.
+      if [[ ! -z ${ACTION:-} ]] ; 
+        then
+          [[ "${SUBCMD:-}" ]] || export SUBCMD="${key}" ; 
+      fi
+      [[ "${ACTION:-}" ]] || export ACTION="${key}"
+      ;;
+  esac
+  
+  # Remove one argument from the list of command line arguments.
+  shift
+done
+
+export AWS_CMD="${AWS_CMD:-aws} \
+$(echo ${AWS_PROFILE:+--profile=${AWS_PROFILE}} || echo ${AWS_DEFAULT_PROFILE:+--profile=${AWS_DEFAULT_PROFILE}}) \
+${AWS_REGION:+--region=${AWS_REGION}} \
+${AWS_CMD_OPTIONS:-}"
+
+export AWS_ACCOUNT_ID=$(${AWS_CMD} sts get-caller-identity --output text --query 'Account')
+export AWS_REGION=${AWS_REGION:-us-east-1}
+export TF_LOG=
+export WAIT_BETWEEN_COMMANDS=15
+info "using AWS_REGION: ${AWS_REGION}" 
+
+#if ${AWS_CMD} s3 ls "s3://$ENVIRONMENT-infra-configs-$AWS_ACCOUNT_ID" 2>&1 | grep -q 'NoSuchBucket'
+#  then
+#    ${AWS_CMD} s3 mb s3://$ENVIRONMENT-infra-configs-$AWS_ACCOUNT_ID
+#else
+#   info "Config S3 Bucket exists"
+#fi
+#
+
+export KWD=`pwd`
+
+
+if [[ -z ${AWS_TERRAFORM_STATE_BUCKET:-} ]]; then
+   export AWS_TERRAFORM_STATE_BUCKET="$ENVIRONMENT-${AWS_ACCOUNT_ID}-${AWS_REGION}-infra-state-tf"
+fi
+
+if [[ -z ${AWS_TERRAFORM_DYNAMODB_TABLE:-} ]]; then
+   export AWS_TERRAFORM_DYNAMODB_TABLE="$ENVIRONMENT-${AWS_ACCOUNT_ID}-${AWS_REGION}-infra-lock-tbl-tf"
+fi
+
+
+export STACK_PREFIX=${STACK_PREFIX:-default}
+
+info "AWS_ACCOUNT_ID: ${AWS_ACCOUNT_ID}"
+info "AWS_REGION: ${AWS_REGION}"
+info "AWS_CMD: ${AWS_CMD}"
+
+if [ ! -z "${AWS_TERRAFORM_STATE_BUCKET:-}" ]; then
+  info "AWS_TERRAFORM_STATE_BUCKET: ${AWS_TERRAFORM_STATE_BUCKET}" 
+fi
+
+if [ ! -z "${AWS_TERRAFORM_DYNAMODB_TABLE:-}" ]; then
+  info "AWS_TERRAFORM_DYNAMODB_TABLE: ${AWS_TERRAFORM_DYNAMODB_TABLE}" 
+fi
+
+info "STACK_PREFIX: ${STACK_PREFIX}"
+
+if [ ! -z "${TF_STACK:-}" ]; then
+  info "TF_STACK: ${TF_STACK}" 
+fi
+
+if [ ! -z "${ACTION:-}" ]; then
+  info "ACTION: ${ACTION}" 
+fi
+
+if [ ! -z "${ENVIRONMENT:-}" ]; then
+  info "ENVIRONMENT: ${ENVIRONMENT}" 
+fi
+
+export ENVIRONMENT_NAME=$(echo ${ENVIRONMENT} | tr "[a-z]" "[A-Z]")
+info "CURRENT WORKING DIR: ${KWD}"
+
+export ECR_STACK=ecr
+export EKS_STACK=eks
+
+
+echo "########### $ENVIRONMENT  Cluster Values #####################" > $KWD/$ENVIRONMENT-cluster-env-values.sh
+
+if [ "$ACTION" = "create" ]
+then
+  ./bin/init-backend.sh
+  sleep 10
+  if [ "$TF_STACK" = "vpc" ] 
+  then
+      echo "Creating VPC"
+      ./bin/tf-create.sh
+  elif [ "$TF_STACK" = "eks" ] 
+  then
+      ./bin/create-eks.sh
+      echo "Create EKS"
+  fi   
+elif [ "$ACTION" = "destroy" ]
+  then
+    info "Destroying"
+    if [ "$TF_STACK" = "vpc" ] 
+    then
+      echo "Destroying VPC"
+      ./bin/tf-destroy.sh
+    elif [ "$TF_STACK" = "eks" ] 
+    then
+      echo "Destroy EKS"
+      ./bin/destroy-eks.sh
+    elif [ "$TF_STACK" = "backend" ] 
+    then
+      echo "Destroy Backend"
+      ./bin/destroy-backend.sh   
+    fi   
+
+      #destroy VPC
+      #./bin/clean-eks-services.sh
+      #./bin/destroy-eks.sh
+      #./bin/tf-destroy.sh
+    
+      #sleep 30
+      #destroy dynamodb and s3
+      #./bin/destroy-backend.sh
+      #./bin/destroy-config-s3.sh    
+else
+  err  "Invalid Platform Option"
+  exit 1
+fi
+
+END_TIME=$(date +%s)
+
+ELAPSED_TIME="$(($END_TIME-$START_TIME))"
+
+notice "Time elapsed: $(($ELAPSED_TIME / 60)) minutes and $(($ELAPSED_TIME % 60)) seconds."
