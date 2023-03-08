@@ -6,12 +6,12 @@ aws_region         = "us-west-2"
 environment        = "dev"
 create_bastion     = "1"
 cluster_version    = "1.25"
-ec2_user_key       = "gtl-dev-rsa-gitlab"
-account_hostedzone = "gtldev.net."
+ec2_user_key       = "dev-rsa-ec2-key"
+account_hostedzone = "exampleg.net."
 app_name           = "eks-bp"
 map_roles = [
     {
-      rolearn  = "arn:aws:iam::516176675572:role/dev-eks-admin"
+      rolearn  = "arn:aws:iam::12345678:role/dev-eks-admin"
       username = "admin:{{SessionName}}" # The user name within Kubernetes to map to the IAM role
       groups   = ["system:masters"] # A list of groups within Kubernetes to which the role is mapped; Checkout K8s Role and Rolebindings
     } 
